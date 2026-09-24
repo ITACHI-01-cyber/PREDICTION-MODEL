@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 
 import joblib
+import numpy as np
 import pandas as pd
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -41,7 +42,7 @@ def match_sector_name(user_sector: str, known_sectors: list[str]) -> str:
 
 
 print("==================================================")
-print("   SIH ML Cost Overrun Prediction Model - Active   ")
+print("   SIH ML Cost + Time Overrun Prediction Model   ")
 print("==================================================")
 
 if not MODEL_PATH.exists():
@@ -72,21 +73,33 @@ while True:
         if progress_str.lower() in ['exit', 'quit']:
             break
 
+        delay_str = input("\033[1;36mEnter Time Delay (in Months, e.g., 12.5): \033[0m").strip()
+        if delay_str.lower() in ['exit', 'quit']:
+            break
+
         original_cost = float(orig_cost_str)
         physical_progress = float(progress_str)
+        time_delay_months = float(delay_str)
         matched_sector = match_sector_name(sector, sector_aliases)
 
         input_data = pd.DataFrame({
             'Sector': [matched_sector],
             'Original_Cost': [original_cost],
             'Physical_Progress': [physical_progress],
+            'Time_Delay_Months': [time_delay_months],
         })
 
-        prediction = model.predict(input_data)
-        final_overrun = max(0.0, float(prediction[0]))
+        prediction = np.asarray(model.predict(input_data))
+        if prediction.ndim == 1:
+            final_overrun = max(0.0, float(prediction[0]))
+            final_time_overrun = max(0.0, time_delay_months)
+        else:
+            final_overrun = max(0.0, float(prediction[0, 0]))
+            final_time_overrun = max(0.0, float(prediction[0, 1]))
 
         print("\n\033[1;32m[ML Model Output]:\033[0m")
-        print(f"  ➔ Predicted Cost Overrun: ₹{final_overrun:.2f} Crore\n")
+        print(f"  ➔ Predicted Cost Overrun: ₹{final_overrun:.2f} Crore")
+        print(f"  ➔ Predicted Time Overrun: {final_time_overrun:.2f} months\n")
 
     except ValueError:
         print("\n\033[1;31m[Error]: Please enter valid numeric values for cost and progress.\033[0m\n")

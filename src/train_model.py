@@ -9,6 +9,7 @@ import pandas as pd
 from sklearn.compose import ColumnTransformer
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
+from sklearn.multioutput import MultiOutputRegressor
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder
 from xgboost import XGBRegressor
@@ -140,12 +141,22 @@ def create_sample_dataset(output_path: Path) -> pd.DataFrame:
         physical_progress = round(float(rng.uniform(12, 90)), 2)
         cost_multiplier = 1 + rng.uniform(0.05, 0.5)
         revised_cost = round(original_cost * cost_multiplier, 2)
+        delay_months = round(float(rng.uniform(0, 36)), 2)
+        time_overrun_months = round(
+            max(
+                0.0,
+                delay_months + (100.0 - physical_progress) * 0.12 + (original_cost / 300.0) * 0.15 - 8.0,
+            ),
+            2,
+        )
         rows.append(
             {
                 "Sector": sector,
                 "Original Cost": original_cost,
                 "Revised Cost": revised_cost,
                 "Physical Progress (%)": physical_progress,
+                "Time Delay (Months)": delay_months,
+                "Time Overrun (Months)": time_overrun_months,
             }
         )
 
@@ -171,6 +182,8 @@ def prepare_dataset(raw_data: pd.DataFrame) -> pd.DataFrame:
     sector_col = pick_column("sector") or pick_column("state")
     original_col = pick_column("orignal cost", "original cost") or pick_column("cost")
     progress_col = pick_column("physical progress") or pick_column("progress")
+    delay_col = pick_column("time delay", "delay", "months delay")
+    time_overrun_col = pick_column("time overrun")
 
     if not any([sector_col, pick_column("state")]):
         raise ValueError("Missing required categorical column: Sector or State")
@@ -188,14 +201,42 @@ def prepare_dataset(raw_data: pd.DataFrame) -> pd.DataFrame:
     dataset["Revised_Cost"] = pair_values.apply(lambda pair: pair[1])
     dataset["Physical_Progress"] = dataset[progress_col].apply(clean_percentage)
 
-    dataset = dataset.dropna(subset=["Original_Cost", "Revised_Cost", "Sector", "Physical_Progress"]).copy()
+    if delay_col is not None:
+        dataset["Time_Delay_Months"] = dataset[delay_col].apply(clean_percentage)
+    else:
+        dataset["Time_Delay_Months"] = 0.0
+
+    if time_overrun_col is not None:
+        dataset["Time_Overrun_Months"] = dataset[time_overrun_col].apply(clean_percentage)
+    else:
+        dataset["Time_Overrun_Months"] = dataset["Time_Delay_Months"].copy()
+
+    dataset["Time_Delay_Months"] = dataset["Time_Delay_Months"].clip(lower=0.0)
+    dataset["Time_Overrun_Months"] = dataset["Time_Overrun_Months"].clip(lower=0.0)
+
+    if dataset["Time_Overrun_Months"].nunique() <= 1:
+        dataset["Time_Overrun_Months"] = (
+            dataset["Time_Delay_Months"]
+            + (100.0 - dataset["Physical_Progress"]) * 0.12
+            + (dataset["Original_Cost"] / 500.0) * 0.6
+        ).clip(lower=0.0)
+
+    dataset = dataset.dropna(subset=["Original_Cost", "Revised_Cost", "Sector", "Physical_Progress", "Time_Delay_Months", "Time_Overrun_Months"]).copy()
     dataset = dataset[(dataset["Original_Cost"] > 0) & (dataset["Revised_Cost"] > 0)].copy()
-    dataset["Overrun_Amount"] = dataset["Revised_Cost"] - dataset["Original_Cost"]
+    dataset["Overrun_Amount"] = (dataset["Revised_Cost"] - dataset["Original_Cost"]).clip(lower=0.0)
     return dataset
 
 
+def resolve_repo_path(path_value: str | Path) -> Path:
+    candidate = Path(path_value)
+    if candidate.is_absolute():
+        return candidate
+    project_root = Path(__file__).resolve().parents[1]
+    return (project_root / candidate).resolve()
+
+
 def train_and_save_model(input_csv: str | Path, output_model: str | Path) -> dict:
-    input_path = Path(input_csv)
+    input_path = resolve_repo_path(input_csv)
     if not input_path.exists():
         print(f"Dataset not found at {input_path}. Creating a sample dataset for demonstration.")
         input_path = input_path.parent / "sample_project_data.csv"
@@ -207,14 +248,15 @@ def train_and_save_model(input_csv: str | Path, output_model: str | Path) -> dic
     if dataset.empty:
         raise ValueError("No usable rows after preprocessing. Check the extracted PDF columns.")
 
-    features = ["Sector", "Original_Cost", "Physical_Progress"]
+    features = ["Sector", "Original_Cost", "Physical_Progress", "Time_Delay_Months"]
     X = dataset[features]
-    y = dataset["Overrun_Amount"]
+    target_columns = ["Overrun_Amount", "Time_Overrun_Months"]
+    y = dataset[target_columns]
 
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
     categorical_features = ["Sector"]
-    numeric_features = ["Original_Cost", "Physical_Progress"]
+    numeric_features = ["Original_Cost", "Physical_Progress", "Time_Delay_Months"]
 
     preprocessor = ColumnTransformer(
         transformers=[
@@ -223,64 +265,78 @@ def train_and_save_model(input_csv: str | Path, output_model: str | Path) -> dic
         ]
     )
 
+    base_regressor = XGBRegressor(
+        n_estimators=800,
+        learning_rate=0.025,
+        max_depth=10,
+        subsample=0.9,
+        colsample_bytree=0.9,
+        min_child_weight=1,
+        reg_lambda=2.0,
+        reg_alpha=0.1,
+        gamma=0.05,
+        objective="reg:squarederror",
+        random_state=42,
+        tree_method="hist",
+    )
+
     model = Pipeline(
         steps=[
             ("preprocessor", preprocessor),
-            (
-                "regressor",
-                XGBRegressor(
-                    n_estimators=800,
-                    learning_rate=0.025,
-                    max_depth=10,
-                    subsample=0.9,
-                    colsample_bytree=0.9,
-                    min_child_weight=1,
-                    reg_lambda=2.0,
-                    reg_alpha=0.1,
-                    gamma=0.05,
-                    objective="reg:squarederror",
-                    random_state=42,
-                    tree_method="hist",
-                ),
-            ),
+            ("regressor", MultiOutputRegressor(base_regressor)),
         ]
     )
 
-    print("Training the ML model...")
+    print("Training the ML model for both cost overrun and time overrun...")
     model.fit(X_train, y_train)
 
     y_pred = model.predict(X_test)
-    r2 = r2_score(y_test, y_pred)
-    mae = mean_absolute_error(y_test, y_pred)
-    rmse = mean_squared_error(y_test, y_pred, squared=False)
+    cost_r2 = r2_score(y_test.iloc[:, 0], y_pred[:, 0])
+    time_r2 = r2_score(y_test.iloc[:, 1], y_pred[:, 1])
+    cost_mae = mean_absolute_error(y_test.iloc[:, 0], y_pred[:, 0])
+    time_mae = mean_absolute_error(y_test.iloc[:, 1], y_pred[:, 1])
+    cost_rmse = mean_squared_error(y_test.iloc[:, 0], y_pred[:, 0]) ** 0.5
+    time_rmse = mean_squared_error(y_test.iloc[:, 1], y_pred[:, 1]) ** 0.5
 
-    print(f"Model R^2 Score on test data: {r2:.2f}")
-    print(f"Model MAE: {mae:.2f}")
-    print(f"Model RMSE: {rmse:.2f}")
+    print(f"Model Cost Overrun R^2 Score: {cost_r2:.2f}")
+    print(f"Model Time Overrun R^2 Score: {time_r2:.2f}")
+    print(f"Model Cost Overrun MAE: {cost_mae:.2f}")
+    print(f"Model Time Overrun MAE: {time_mae:.2f}")
+    print(f"Model Cost Overrun RMSE: {cost_rmse:.2f}")
+    print(f"Model Time Overrun RMSE: {time_rmse:.2f}")
 
-    output_path = Path(output_model)
+    output_path = resolve_repo_path(output_model)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     sector_aliases = sorted(dataset["Sector"].dropna().astype(str).unique().tolist())
     artifact = {
         "model": model,
         "sector_aliases": sector_aliases,
+        "target_names": target_columns,
         "metrics": {
-            "r2": float(r2),
-            "mae": float(mae),
-            "rmse": float(rmse),
+            "cost_overrun": {"r2": float(cost_r2), "mae": float(cost_mae), "rmse": float(cost_rmse)},
+            "time_overrun": {"r2": float(time_r2), "mae": float(time_mae), "rmse": float(time_rmse)},
         },
     }
     joblib.dump(artifact, output_path)
     print(f"Model saved successfully to {output_path}")
 
-    return {"r2_score": r2, "mae": mae, "rmse": rmse, "model_path": str(output_path)}
+    return {
+        "cost_overrun_r2": cost_r2,
+        "time_overrun_r2": time_r2,
+        "cost_overrun_mae": cost_mae,
+        "time_overrun_mae": time_mae,
+        "cost_overrun_rmse": cost_rmse,
+        "time_overrun_rmse": time_rmse,
+        "model_path": str(output_path),
+    }
 
 
 def main() -> None:
+    project_root = Path(__file__).resolve().parents[1]
     parser = argparse.ArgumentParser(description="Train a cost overrun prediction model from tabular project data.")
-    parser.add_argument("--input", default="data/extracted_project_data.csv", help="Path to the extracted project dataset CSV.")
-    parser.add_argument("--output", default="models/sih_cost_prediction_model.pkl", help="Path to save the trained model.")
+    parser.add_argument("--input", default=str(project_root / "data" / "extracted_project_data.csv"), help="Path to the extracted project dataset CSV.")
+    parser.add_argument("--output", default=str(project_root / "models" / "sih_cost_prediction_model.pkl"), help="Path to save the trained model.")
     args = parser.parse_args()
 
     train_and_save_model(args.input, args.output)
