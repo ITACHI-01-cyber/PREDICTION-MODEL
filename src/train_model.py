@@ -7,6 +7,7 @@ from pathlib import Path
 import joblib
 import pandas as pd
 from sklearn.compose import ColumnTransformer
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder
@@ -228,13 +229,18 @@ def train_and_save_model(input_csv: str | Path, output_model: str | Path) -> dic
             (
                 "regressor",
                 XGBRegressor(
-                    n_estimators=500,
-                    learning_rate=0.03,
-                    max_depth=8,
+                    n_estimators=800,
+                    learning_rate=0.025,
+                    max_depth=10,
                     subsample=0.9,
                     colsample_bytree=0.9,
                     min_child_weight=1,
+                    reg_lambda=2.0,
+                    reg_alpha=0.1,
+                    gamma=0.05,
+                    objective="reg:squarederror",
                     random_state=42,
+                    tree_method="hist",
                 ),
             ),
         ]
@@ -243,18 +249,32 @@ def train_and_save_model(input_csv: str | Path, output_model: str | Path) -> dic
     print("Training the ML model...")
     model.fit(X_train, y_train)
 
-    r2_score = model.score(X_test, y_test)
-    print(f"Model R^2 Score on test data: {r2_score:.2f}")
+    y_pred = model.predict(X_test)
+    r2 = r2_score(y_test, y_pred)
+    mae = mean_absolute_error(y_test, y_pred)
+    rmse = mean_squared_error(y_test, y_pred, squared=False)
+
+    print(f"Model R^2 Score on test data: {r2:.2f}")
+    print(f"Model MAE: {mae:.2f}")
+    print(f"Model RMSE: {rmse:.2f}")
 
     output_path = Path(output_model)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     sector_aliases = sorted(dataset["Sector"].dropna().astype(str).unique().tolist())
-    artifact = {"model": model, "sector_aliases": sector_aliases}
+    artifact = {
+        "model": model,
+        "sector_aliases": sector_aliases,
+        "metrics": {
+            "r2": float(r2),
+            "mae": float(mae),
+            "rmse": float(rmse),
+        },
+    }
     joblib.dump(artifact, output_path)
     print(f"Model saved successfully to {output_path}")
 
-    return {"r2_score": r2_score, "model_path": str(output_path)}
+    return {"r2_score": r2, "mae": mae, "rmse": rmse, "model_path": str(output_path)}
 
 
 def main() -> None:
