@@ -47,7 +47,7 @@ print("==================================================")
 
 if not MODEL_PATH.exists():
     print(f"Error: Model not found at {MODEL_PATH}. Please train the model first from the project root.")
-    print("Example: cd /workspaces/PREDICTION-MODEL && python src/train_model.py")
+    print("Example: cd /home/udit/Downloads/PREDICTION-MODEL && python src/train_model.py")
     sys.exit(1)
 
 artifact = joblib.load(MODEL_PATH)
@@ -55,27 +55,63 @@ model = artifact.get("model", artifact) if isinstance(artifact, dict) else artif
 sector_aliases = artifact.get("sector_aliases", []) if isinstance(artifact, dict) else []
 
 print("Model loaded successfully! Ready for live predictions.\n")
-print("Type 'exit' or 'quit' at any prompt to stop.\n")
+print("Type 'exit' or 'quit' to stop.")
+print("Type 'help' to see all valid sectors.\n")
+
+STANDARD_SECTORS = [
+    "Road Transport & Highways",
+    "Railways",
+    "Power",
+    "Petroleum",
+    "Telecommunication",
+    "Water Resources",
+    "Urban Development",
+]
 
 while True:
     try:
         print("-" * 40)
-        sector = input("\033[1;36mEnter Sector (e.g., Road Transport & Highways): \033[0m").strip()
+        sector = input("\033[1;36mEnter Sector: \033[0m").strip()
         if sector.lower() in ['exit', 'quit']:
             print("Exiting prediction session. Good luck !")
             break
 
-        orig_cost_str = input("\033[1;36mEnter Original Cost (in Crores, e.g., 1500.50): \033[0m").strip()
+        if sector.lower() == 'help':
+            print("\nAvailable sectors:")
+            for s in STANDARD_SECTORS:
+                print(f"  - {s}")
+            print()
+            continue
+
+        orig_cost_str = input("\033[1;36mEnter Original Cost (in Crores): \033[0m").strip()
         if orig_cost_str.lower() in ['exit', 'quit']:
             break
+        if orig_cost_str.lower() == 'help':
+            print("\nAvailable sectors:")
+            for s in STANDARD_SECTORS:
+                print(f"  - {s}")
+            print()
+            continue
 
-        progress_str = input("\033[1;36mEnter Physical Progress % (e.g., 45.0): \033[0m").strip()
+        progress_str = input("\033[1;36mEnter Physical Progress %: \033[0m").strip()
         if progress_str.lower() in ['exit', 'quit']:
             break
+        if progress_str.lower() == 'help':
+            print("\nAvailable sectors:")
+            for s in STANDARD_SECTORS:
+                print(f"  - {s}")
+            print()
+            continue
 
-        delay_str = input("\033[1;36mEnter Time Delay (in Months, e.g., 12.5): \033[0m").strip()
+        delay_str = input("\033[1;36mEnter Time given to project (in Months): \033[0m").strip()
         if delay_str.lower() in ['exit', 'quit']:
             break
+        if delay_str.lower() == 'help':
+            print("\nAvailable sectors:")
+            for s in STANDARD_SECTORS:
+                print(f"  - {s}")
+            print()
+            continue
 
         original_cost = float(orig_cost_str)
         physical_progress = float(progress_str)
@@ -102,7 +138,7 @@ while True:
         print(f"  ➔ Predicted Time Overrun: {final_time_overrun:.2f} months\n")
 
     except ValueError:
-        print("\n\033[1;31m[Error]: Please enter valid numeric values for cost and progress.\033[0m\n")
+        print("\n\033[1;31m[Error]: Please enter valid numeric values for cost, progress, and time.\033[0m\n")
     except KeyboardInterrupt:
         print("\nExiting...")
         break

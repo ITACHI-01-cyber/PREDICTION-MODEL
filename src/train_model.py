@@ -23,7 +23,44 @@ def normalize_sector_name(value: object) -> str:
     text = str(value).strip()
     if not text:
         return "unknown"
-    return re.sub(r"[^a-z0-9]+", " ", text.lower()).strip()
+    normalized = re.sub(r"[^a-z0-9]+", " ", text.lower()).strip()
+
+    aliases = {
+        "road transport highways": ["road transport highways", "road transport & highways", "road transport and highways", "highway", "national highway", "nh", "roads", "road"],
+        "railways": ["railways", "railway", "rail", "metro rail"],
+        "power": ["power", "solar", "thermal", "wind", "hydro"],
+        "petroleum": ["petroleum", "lpg", "pol", "oil", "gas", "natural gas"],
+        "telecommunication": ["telecommunication", "telecom", "mobile connectivity", "mobile services"],
+        "water resources": ["water resources", "water", "irrigation", "storm water", "river", "drainage", "dam", "canal"],
+        "urban development": ["urban development", "urban", "housing", "airport", "building", "infrastructure", "smart city"],
+    }
+
+    for canonical, keywords in aliases.items():
+        if normalized in keywords or any(keyword in normalized for keyword in keywords):
+            return canonical
+    return normalized
+
+
+def infer_sector_from_project_name(project_name: object, state_name: object = "") -> str:
+    text = re.sub(r"\s+", " ", str(project_name or "")).strip().lower()
+    if not text:
+        return normalize_sector_name(state_name)
+
+    sector_rules = [
+        ("railways", ["rail", "metro rail", "railway", "rail line"]),
+        ("power", ["power", "solar", "thermal", "wind", "hydro"]),
+        ("petroleum", ["petroleum", "lpg", "pol", "oil", "gas", "natural gas"]),
+        ("road transport highways", ["highway", "national highway", "nh-", "road transport", "roads and services", "roads", "road", "expressway"]),
+        ("telecommunication", ["telecom", "telecommunication", "mobile connectivity", "mobile services", "network"]),
+        ("water resources", ["water", "irrigation", "storm water", "river", "drainage", "dam", "canal"]),
+        ("urban development", ["urban", "housing", "airport", "building", "terminal", "infrastructure", "smart city"]),
+    ]
+
+    for sector_name, keywords in sector_rules:
+        if any(keyword in text for keyword in keywords):
+            return sector_name
+
+    return normalize_sector_name(state_name)
 
 
 def match_sector_name(user_sector: str, known_sectors: list[str]) -> str:
@@ -180,25 +217,45 @@ def prepare_dataset(raw_data: pd.DataFrame) -> pd.DataFrame:
         return None
 
     sector_col = pick_column("sector") or pick_column("state")
+    state_col = pick_column("state")
+    project_name_col = pick_column("project name")
     original_col = pick_column("orignal cost", "original cost") or pick_column("cost")
+    revised_col = pick_column("revised cost")
     progress_col = pick_column("physical progress") or pick_column("progress")
     delay_col = pick_column("time delay", "delay", "months delay")
     time_overrun_col = pick_column("time overrun")
 
-    if not any([sector_col, pick_column("state")]):
+    if not any([sector_col, state_col]):
         raise ValueError("Missing required categorical column: Sector or State")
     if not original_col:
         raise ValueError("Missing required original cost column for training")
     if not progress_col:
         raise ValueError("Missing required progress column for training")
 
-    dataset["Sector"] = (dataset[sector_col] if sector_col else dataset[pick_column("state")]).astype(str)
-    dataset["Sector"] = dataset["Sector"].apply(normalize_sector_name)
+    def infer_sector_row(row: pd.Series) -> str:
+        project_name = row[project_name_col] if project_name_col is not None and project_name_col in row else ""
+        raw_sector = row[sector_col] if sector_col is not None and sector_col in row else ""
+        raw_state = row[state_col] if state_col is not None and state_col in row else ""
+        inferred_sector = infer_sector_from_project_name(project_name, raw_state)
+        if inferred_sector != "unknown":
+            return normalize_sector_name(inferred_sector)
+        if raw_sector:
+            return normalize_sector_name(raw_sector)
+        return normalize_sector_name(raw_state or "unknown")
+
+    dataset["Sector"] = dataset.apply(infer_sector_row, axis=1)
 
     dataset["Original_Cost"] = dataset[original_col].apply(clean_currency)
     pair_values = dataset[original_col].apply(parse_cost_pair)
     dataset["Original_Cost"] = pair_values.apply(lambda pair: pair[0])
-    dataset["Revised_Cost"] = pair_values.apply(lambda pair: pair[1])
+
+    if revised_col is not None:
+        dataset["Revised_Cost"] = dataset[revised_col].apply(clean_currency)
+        revised_pair_values = dataset[revised_col].apply(parse_cost_pair)
+        dataset["Revised_Cost"] = revised_pair_values.apply(lambda pair: pair[0] if pair[0] else pair[1])
+    else:
+        dataset["Revised_Cost"] = pair_values.apply(lambda pair: pair[1])
+
     dataset["Physical_Progress"] = dataset[progress_col].apply(clean_percentage)
 
     if delay_col is not None:
@@ -214,7 +271,11 @@ def prepare_dataset(raw_data: pd.DataFrame) -> pd.DataFrame:
     dataset["Time_Delay_Months"] = dataset["Time_Delay_Months"].clip(lower=0.0)
     dataset["Time_Overrun_Months"] = dataset["Time_Overrun_Months"].clip(lower=0.0)
 
-    if dataset["Time_Overrun_Months"].nunique() <= 1:
+    if (
+        time_overrun_col is None
+        and dataset["Time_Delay_Months"].nunique() > 1
+        and dataset["Time_Overrun_Months"].nunique() <= 1
+    ):
         dataset["Time_Overrun_Months"] = (
             dataset["Time_Delay_Months"]
             + (100.0 - dataset["Physical_Progress"]) * 0.12
@@ -223,7 +284,13 @@ def prepare_dataset(raw_data: pd.DataFrame) -> pd.DataFrame:
 
     dataset = dataset.dropna(subset=["Original_Cost", "Revised_Cost", "Sector", "Physical_Progress", "Time_Delay_Months", "Time_Overrun_Months"]).copy()
     dataset = dataset[(dataset["Original_Cost"] > 0) & (dataset["Revised_Cost"] > 0)].copy()
-    dataset["Overrun_Amount"] = (dataset["Revised_Cost"] - dataset["Original_Cost"]).clip(lower=0.0)
+
+    actual_overrun = (dataset["Revised_Cost"] - dataset["Original_Cost"]).clip(lower=0.0)
+    delay_factor = dataset["Time_Delay_Months"] * 0.003
+    progress_gap = (100.0 - dataset["Physical_Progress"]) * 0.001
+    estimated_overrun = dataset["Original_Cost"] * (0.04 + delay_factor + progress_gap)
+    dataset["Overrun_Amount"] = actual_overrun.combine(estimated_overrun, lambda actual, estimated: actual if actual > 0 else float(estimated))
+    dataset["Overrun_Amount"] = dataset["Overrun_Amount"].clip(lower=0.0)
     return dataset
 
 
