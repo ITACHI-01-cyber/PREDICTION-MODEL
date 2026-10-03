@@ -47,7 +47,7 @@ print("==================================================")
 
 if not MODEL_PATH.exists():
     print(f"Error: Model not found at {MODEL_PATH}. Please train the model first from the project root.")
-    print("Example: cd /home/udit/Downloads/PREDICTION-MODEL && python src/train_model.py")
+    print("Example: python model/src/train_model.py")
     sys.exit(1)
 
 artifact = joblib.load(MODEL_PATH)

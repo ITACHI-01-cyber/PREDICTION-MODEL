@@ -249,7 +249,7 @@ def build_dataset_from_pdfs(project_root: Path | str) -> pd.DataFrame:
 def main() -> None:
     project_root = Path(__file__).resolve().parents[1]
     parser = argparse.ArgumentParser(description="Extract project rows from one or more PDF reports.")
-    parser.add_argument("--pdf", help="Optional single PDF file to process instead of all PDFs in the repo root.")
+    parser.add_argument("--pdf", help="Optional single PDF file to process instead of all PDFs in the data directory.")
     parser.add_argument(
         "--output",
         default=str(project_root / "data" / "extracted_project_data.csv"),
@@ -263,7 +263,7 @@ def main() -> None:
     if args.pdf:
         extracted = extract_tables_from_pdf(args.pdf)
     else:
-        extracted = build_dataset_from_pdfs(project_root)
+        extracted = build_dataset_from_pdfs(project_root / "data")
 
     extracted.to_csv(output_path, index=False)
     print(f"Data extracted successfully and saved to {output_path}")

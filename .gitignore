@@ -1,5 +1,5 @@
 __pycache__/
 *.pyc
 *.pkl
-data/
-models/
+/model/data/*.csv
+/model/models/
