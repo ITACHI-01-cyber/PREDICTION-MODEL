@@ -333,9 +333,9 @@ def train_and_save_model(input_csv: str | Path, output_model: str | Path) -> dic
     )
 
     base_regressor = XGBRegressor(
-        n_estimators=800,
-        learning_rate=0.025,
-        max_depth=10,
+        n_estimators=300,
+        learning_rate=0.05,
+        max_depth=6,
         subsample=0.9,
         colsample_bytree=0.9,
         min_child_weight=1,
@@ -345,6 +345,7 @@ def train_and_save_model(input_csv: str | Path, output_model: str | Path) -> dic
         objective="reg:squarederror",
         random_state=42,
         tree_method="hist",
+        n_jobs=4,
     )
 
     model = Pipeline(

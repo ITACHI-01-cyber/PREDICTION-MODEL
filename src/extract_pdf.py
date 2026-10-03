@@ -196,7 +196,10 @@ def extract_tables_from_pdf(pdf_path: str | Path) -> pd.DataFrame:
 
     relevant_tables: list[pd.DataFrame] = []
     with pdfplumber.open(pdf_file) as pdf:
-        for page in pdf.pages:
+        total_pages = len(pdf.pages)
+        for page_number, page in enumerate(pdf.pages, start=1):
+            if page_number == 1 or page_number % 50 == 0:
+                print(f"  Scanning {pdf_file.name}: page {page_number}/{total_pages}", flush=True)
             page_text = (page.extract_text() or "").lower()
             if "ongoing projects" not in page_text:
                 continue
@@ -218,12 +221,18 @@ def extract_tables_from_pdf(pdf_path: str | Path) -> pd.DataFrame:
 def build_dataset_from_pdfs(project_root: Path | str) -> pd.DataFrame:
     root = Path(project_root)
     extracted_frames: list[pd.DataFrame] = []
+    pdf_files = sorted(root.glob("*.pdf"))
 
-    for pdf_file in sorted(root.glob("*.pdf")):
+    print(f"Scanning {len(pdf_files)} PDF files in {root}", flush=True)
+    for pdf_file in pdf_files:
+        print(f"Processing {pdf_file.name}", flush=True)
         try:
-            extracted_frames.append(extract_tables_from_pdf(pdf_file))
+            extracted = extract_tables_from_pdf(pdf_file)
         except ValueError:
+            print(f"  No usable project table found in {pdf_file.name}", flush=True)
             continue
+        extracted_frames.append(extracted)
+        print(f"  Extracted {len(extracted)} project rows", flush=True)
 
     if not extracted_frames:
         raise ValueError(f"No project tables could be extracted from PDFs in {root}")
