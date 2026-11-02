@@ -1,5 +1,264 @@
+# ========================================
+# GovProject Risk Analytics - Git Ignore Patterns
+# ========================================
+
+# ========================================
+# Dependencies (Node.js & Frontend)
+# ========================================
+# Dependency directories
+node_modules/
+jspm_packages/
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# Build outputs - Frontend
+frontend/dist/
+frontend/build/
+frontend/.vite/
+
+# ========================================
+# Dependencies (Java & Maven)
+# ========================================
+# Maven
+target/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+buildNumber.properties
+.mvn/timing.properties
+.mvn/wrapper/maven-wrapper.jar
+
+# Gradle
+.gradle/
+build/
+*.jar
+
+# ========================================
+# Python Virtual Environments
+# ========================================
+# Virtual environment directories
+venv/
+ENV/
+env/
+.venv/
+.venv-1/
+
+# Python cache
 __pycache__/
-*.pyc
-*.pkl
-/model/data/*.csv
-/model/models/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# pyenv
+.python-version
+
+# pipenv
+Pipfile.lock
+
+# Poetry
+poetry.lock
+
+# pdm
+.pdm.toml
+
+# PEP 582
+__pypackages__/
+
+# Celery stuff
+celerybeat-schedule
+celerybeat.pid
+
+# Pylint
+.pylint_cache/
+
+# ========================================
+# IDEs & Editors
+# ========================================
+# JetBrains IDEs
+.idea/
+*.iml
+*.iws
+*.ipr
+.idea_modules/
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# Vim
+*.swp
+*.swo
+*.swn
+*~
+.netrwhist
+
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+auto-save-list
+tramp
+
+# ========================================
+# Model Training & Data Files
+# ========================================
+# Model artifacts (stored in separate volumes for Docker)
+model/models/*.pkl
+
+# Training data - PDF files (large, not committed)
+model/data/*.pdf
+
+# Temporary training files
+model/data/temp_*.csv
+model/data/*.backup
+
+# MongoDB data
+data/db/
+*.db
+*.sqlite
+
+# ========================================
+# ML Model & Experiments
+# ========================================
+mlruns/
+artifacts/
+checkpoints/
+outputs/
+runs/
+*.ckpt
+*.pt
+
+# ========================================
+# Build Outputs
+# ========================================
+# Java compiled classes
+*.class
+out/
+
+# ========================================
+# OS Generated Files
+# ========================================
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+
+# ========================================
+# Logs, Cache & Temp Files
+# ========================================
+# All logs
+*.log
+logs/
+
+# Cache directories
+.cache/
+*.cache
+
+# Temporary files
+tmp/
+temp/
+temp.*
+*.tmp
+
+# Compressed files (backup, archive)
+*.bak
+*.backup
+*.old
+*.orig
+
+# ========================================
+# Secrets & Credentials
+# ========================================
+# Never commit actual secrets
+*.pem
+*.key
+*.cert
+*.crt
+secrets/
+.secrets/
+credentials
+.aws/
+
+# Environment variable files
+.env
+.env.*
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# ========================================
+# Additional Exclusions
+# ========================================
+# Windows Thumbnails cache
+ehthumbs.db
+
+# Files ending in ~
+*~

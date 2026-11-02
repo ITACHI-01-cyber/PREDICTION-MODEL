@@ -1,0 +1,21 @@
+spring:
+  data:
+    mongodb:
+      uri: ${MONGODB_URI:mongodb://localhost:27017/govproject_risk_analytics}
+  jackson:
+    default-property-inclusion: non_null
+server:
+  port: 8080
+jwt:
+  secret: ${JWT_SECRET:defaultDevSecretKeyThatIsAtLeast256BitsLongForHS256Algorithm}
+  expiration-ms: 86400000
+model:
+  service:
+    url: ${MODEL_SERVICE_URL:http://localhost:8000}
+    timeout-ms: 30000
+app:
+  admin:
+    username: ${ADMIN_USERNAME:admin}
+    password: ${ADMIN_PASSWORD:admin123}
+cors:
+  allowed-origins: ${CORS_ORIGINS:http://localhost:5173}
